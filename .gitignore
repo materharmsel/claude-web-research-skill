@@ -1,0 +1,7 @@
+# Local development history — not published (contains personal paths / private topics)
+docs/
+v1-backup/
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
