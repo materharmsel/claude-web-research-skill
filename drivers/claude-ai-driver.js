@@ -93,9 +93,11 @@
       else if (t === 'table') {
         const rows = [...n.querySelectorAll('tr')].map(tr => [...tr.querySelectorAll('th,td')].map(c => inl(c).replace(/\n/g, ' ').trim()));
         if (rows.length) {
-          out.push('| ' + rows[0].join(' | ') + ' |');
-          out.push('| ' + rows[0].map(() => '---').join(' | ') + ' |');
-          rows.slice(1).forEach(r => out.push('| ' + r.join(' | ') + ' |'));
+          // Bouw de hele tabel als ÉÉN blok (regels met enkele \n) — anders breekt out.join('\n\n')
+          // de tabel met lege regels tussen de rijen en rendert markdown hem niet.
+          const lines = ['| ' + rows[0].join(' | ') + ' |', '| ' + rows[0].map(() => '---').join(' | ') + ' |'];
+          rows.slice(1).forEach(r => lines.push('| ' + r.join(' | ') + ' |'));
+          out.push(lines.join('\n'));
         }
       }
       else if (t === 'pre') out.push('```\n' + n.textContent + '\n```');
