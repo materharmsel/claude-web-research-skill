@@ -29,10 +29,19 @@ met screenshots. Screenshots alleen als vangnet (zie onderaan).
 
 ## Vaste regels
 
+- **Fail-fast — NOOIT lussen (token-bewaking).** Herhaal dezelfde mislukte handeling
+  hooguit **2×**. Krijg je 2× achter elkaar een `error` / `selector-not-found` /
+  `ready:false` / een onbevestigde submit op dezelfde stap → **STOP onmiddellijk**, sla
+  niets op, en meld de user kort: wélke stap faalde + de laatste JSON-output. Niet zelf
+  inloggen, geen eindeloze screenshots, geen vrije UI-verkenning buiten het per-stap
+  vision-vangnet. (Deze run liep ooit vast op een uitgelogde Gemini en verspilde tokens —
+  dat mag nooit meer.)
 - **Alles gaat via de UI/DOM-driver.** Gemini heeft geen rapport-API; de driver leest de
   status en het rapport uit de DOM. Daarom is dit een echte UI-driver (geen API-extractie).
-- **Nooit tekst typen via keystrokes.** Vullen gaat via `fillPrompt()` (execCommand),
-  submitten via `submit()` (send-knop, met Enter-keydown-fallback).
+- **Prompt-tekst nooit typen via keystrokes.** Het *vullen* gaat via `fillPrompt()`
+  (execCommand). *Submitten* gaat via `submit()` (send-knop); lukt dat niet, dan **één
+  echte Enter-toets** via het `computer`-tool (zie stap 7). Een echte Enter is géén
+  tekst-typen — die is juist nodig omdat Gemini gesynthetiseerde keydowns negeert.
 - **Geen lange in-page poll-loops.** Een `javascript_tool`-call die >~30s in de pagina
   blijft pollen kan de CDP-timeout (45s) raken zodra de renderer druk is met renderen.
   Wacht daarom met `computer wait` (brokken van 10s) en doe daartussen een **korte**
@@ -49,12 +58,25 @@ Lees `prompt_file` volledig. Dit is de EN-prompt die verbatim in Gemini gaat.
 
 ### 2. Open Gemini
 `tabs_context_mcp` → `tabs_create_mcp` → `navigate` naar `https://gemini.google.com/app`.
-Zie je een **loginscherm** → STOP en meld de user. Niet zelf inloggen.
+Login- en cookie-detectie gebeurt deterministisch in stap 3 (`preflight()`) — **niet zelf
+inloggen**.
 
-### 3. Injecteer de driver (ÉÉN keer)
+### 3. Injecteer de driver (ÉÉN keer) + pre-flight
 Lees `driver_file` en voer de volledige inhoud uit via `javascript_tool`.
 Verwacht: `{"loaded":true,"version":"…","fns":[…]}`. De functies blijven op
 `window.__gdr` staan zolang de pagina niet herlaadt.
+
+Roep **direct daarna** `window.__gdr.preflight()` aan (klikt een cookie-consent-popup weg
+en checkt of je ingelogd bent):
+- `{"ready":true}` → ga door naar stap 4.
+- `{"ready":false,"reason":"signed-out"}` → **STOP**. Gemini is uitgelogd; Deep Research
+  bestaat dan niet en het vak blijft leeg. Meld de user: *"Gemini is niet ingelogd in
+  Chrome — log in op je Google-account en draai de research opnieuw."* **Niet zelf inloggen.**
+- `{"ready":false,"reason":"consent-stuck"}` → de cookie-popup liet zich niet wegklikken.
+  STOP en meld de user (popup handmatig wegklikken, dan opnieuw draaien).
+- `{"ready":false,"reason":"no-editor"}` → pagina niet klaar / onbekende staat. STOP en meld.
+
+Dit is een harde gate: ga **nooit** voorbij stap 3 als `ready` niet `true` is.
 
 ### 4. Model op Flash
 `window.__gdr.ensureFlashModel()` → verwacht `{"flash":true}`.
@@ -68,11 +90,23 @@ stap 4 echt Flash heeft gezet, dan vision-vangnet.
 
 ### 6. Prompt invoeren
 `window.__gdr.fillPrompt(<PROMPT>)` waarbij `<PROMPT>` de inhoud van `prompt_file` is als
-**JSON-geëscapete string**. Verwacht `{"len": <groot getal>}`.
+**JSON-geëscapete string**. Verwacht `{"len": <groot getal>}` — de prompt is lang, dus
+**`len` hoort > 100 te zijn**. Is `len` 0 of klein → het tekstvak accepteerde geen tekst
+(blokkerende popup of toch uitgelogd). NIET in een lus opnieuw proberen: **STOP** en meld
+de user (fail-fast).
 
-### 7. Submitten
-`window.__gdr.submit()` → verwacht `{"submitted":true}` (meestal `"via":"send-button"`,
-`"urlChanged":true` → de chat heeft nu een `/app/{id}`-URL).
+### 7. Submitten (max 2 pogingen — daarna STOP)
+1. `window.__gdr.submit()` → bij `{"submitted":true}` (meestal `"via":"send-button"`,
+   `"urlChanged":true` → de chat heeft nu een `/app/{id}`-URL) → door naar stap 8.
+2. Geeft submit `{"submitted":false}` of een error? **Eén** gerichte fallback met een
+   **ECHTE Enter-toets** (géén JS-synthese): klik in de editor (`.ql-editor`) zodat hij
+   focus heeft, en druk Enter via het **`computer`-tool** (action `key`, toets `Return`).
+   Verifieer daarna met `window.__gdr.submitState()`:
+   - `{"submitted":true}` (`onChat`/`hasStop`/`hasPlan`) → door naar stap 8.
+   > Een échte Enter is bewust: Gemini negeert vaak gesynthetiseerde keydowns, maar een
+   > echte Enter in het tekstvak start Deep Research wél (live bevestigd 2026-06-03).
+3. Nog steeds niet bevestigd? **STOP — geen 3e poging.** Meld de user: welke stap + de
+   laatste `submitState()`-JSON.
 
 ### 8. Plan bevestigen (Gemini-specifiek)
 Wacht ~6-8s (`computer wait`) zodat het research-plan rendert, dan:

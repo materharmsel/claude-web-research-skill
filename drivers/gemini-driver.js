@@ -116,7 +116,35 @@
   };
 
   window.__gdr = {
-    version: '2026-05-31b', // b: live geverifieerd — Stop-response-signaal + immersive-panel .markdown-extractie
+    version: '2026-06-03c', // c: preflight-gate (login/consent) + submitState-verificatie; draaiboek doet fail-fast + real-Enter fallback
+
+    // ---------- PRE-FLIGHT (UI/DOM) ----------
+
+    // Is Gemini bruikbaar VÓÓR we beginnen? Klikt eerst de Google cookie-consent
+    // interstitial weg (blokkeert anders focus/typen), en detecteert de UITGELOGDE
+    // staat — de #1 oorzaak van vastlopen: uitgelogd → leeg vak → disabled send-knop →
+    // submit() blijft "editor-empty" geven → de agent loopt eindeloos door (token-verspilling).
+    // -> {ready:true} | {ready:false, reason:'signed-out'|'consent-stuck'|'no-editor'}
+    async preflight() {
+      try {
+        // 1. Cookie-consent interstitial ("Voordat je verdergaat naar Google") wegklikken.
+        let dismissedConsent = false;
+        const consentText = /voordat je verdergaat naar google|before you continue to google/i;
+        if (consentText.test(document.body.innerText || '')) {
+          const btn = qa('button').find(b => /^(alles afwijzen|alles accepteren|reject all|accept all)$/i.test((b.innerText || '').trim()));
+          if (btn) { btn.click(); dismissedConsent = true; await delay(700); }
+          if (consentText.test(document.body.innerText || '')) return JSON.stringify({ ready: false, reason: 'consent-stuck', dismissedConsent });
+        }
+        // 2. Uitgelogd? De ServiceLogin-redirect of een expliciete "Inloggen/Sign in"-control.
+        const signedOut = !!qa('a,button').find(e =>
+          /accounts\.google\.com\/(v\d+\/)?servicelogin/i.test(e.getAttribute('href') || '') ||
+          /^(inloggen|sign in|aanmelden)$/i.test((e.innerText || '').trim()));
+        if (signedOut) return JSON.stringify({ ready: false, reason: 'signed-out', dismissedConsent });
+        // 3. Core-UI aanwezig (de editor)? Zo niet → pagina niet klaar / onbekende staat.
+        if (!q(SEL.editor)) return JSON.stringify({ ready: false, reason: 'no-editor', dismissedConsent });
+        return JSON.stringify({ ready: true, dismissedConsent });
+      } catch (e) { return JSON.stringify({ ready: false, reason: 'preflight-exception', error: String(e).slice(0, 120) }); }
+    },
 
     // ---------- MODEL (UI/DOM) ----------
 
@@ -200,6 +228,20 @@
         window.__gdrT0 = Date.now();
         return JSON.stringify({ submitted: cleared || urlChanged, via, urlChanged });
       } catch (e) { return JSON.stringify({ error: String(e).slice(0, 120), step: 'submit' }); }
+    },
+
+    // Verifieer of de prompt ÉCHT verstuurd is — gebruikt door het draaiboek na de
+    // real-Enter fallback (echte Enter-toets via het browser-toetsenbord, omdat Gemini
+    // gesynthetiseerde keydowns vaak negeert). -> {submitted, onChat, hasStop, hasPlan, editorEmpty}
+    submitState() {
+      try {
+        const ed = q(SEL.editor);
+        const editorEmpty = ed ? (ed.innerText || '').trim().length === 0 : true;
+        const onChat = /\/app\/[a-z0-9-]+/i.test(location.href);
+        const hasStop = !!q(SEL.stop);
+        const hasPlan = !!findByText(/start research|begin research|onderzoek starten/i);
+        return JSON.stringify({ submitted: onChat || hasStop || hasPlan, onChat, hasStop, hasPlan, editorEmpty });
+      } catch (e) { return JSON.stringify({ submitted: false, error: String(e).slice(0, 120), step: 'submitState' }); }
     },
 
     // Bevestig het research-plan: klik "Start research" (plan NIET bewerken). -> {started}

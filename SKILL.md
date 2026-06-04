@@ -156,7 +156,7 @@ Bestanden in de sessie-map:
 | `agent-prompt-claude.md` | Deterministisch draaiboek voor de **Claude** background agent |
 | `agent-prompt-gemini.md` | Deterministisch draaiboek voor de **Gemini** background agent |
 | `drivers/claude-ai-driver.js` | Getest JS-recept voor claude.ai. **Starten** via de UI (Research aan, prompt vullen, submit via Enter-keydown); **status, deep-research-check en extractie** via claude.ai's conversatie-API (geen klik/voorgrond/artifact-paneel nodig → background-proof). Rapport komt als markdown uit het `artifacts`-blok; Blob-download naar schijf. Live geverifieerd 2026-05-29. |
-| `drivers/gemini-driver.js` | Getest JS-recept voor Gemini Deep Research. **Alles via UI/DOM**: model op Flash (`ensureFlashModel`), Deep Research aan, prompt vullen, submitten, plan bevestigen (`startResearch`), status via de `Stop response`-knop, extractie uit `deep-research-immersive-panel .markdown` (HTML→markdown) → Blob-download. Live geverifieerd 2026-05-31. |
+| `drivers/gemini-driver.js` | Getest JS-recept voor Gemini Deep Research. **Alles via UI/DOM**: **pre-flight** (`preflight` — cookie-consent wegklikken + uitgelogd-detectie als harde STOP-gate), model op Flash (`ensureFlashModel`), Deep Research aan, prompt vullen, submitten + submit-verificatie (`submitState`, voor de real-Enter fallback in het draaiboek), plan bevestigen (`startResearch`), status via de `Stop response`-knop, extractie uit `deep-research-immersive-panel .markdown` (HTML→markdown) → Blob-download. Kern live geverifieerd 2026-05-31; pre-flight + fail-fast-hardening 2026-06-03. |
 
 ## Taal-regels
 
